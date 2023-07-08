@@ -8,11 +8,11 @@ use smithay_client_toolkit::{
     seat::{Capability, SeatHandler, SeatState},
     shell::wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure},
 };
+use std::time::Instant;
 use wayland_client::{
     protocol::{wl_output, wl_seat, wl_surface},
     Connection, QueueHandle,
 };
-
 pub struct WgpuLayer {
     pub registry_state: RegistryState,
     pub seat_state: SeatState,
@@ -22,12 +22,16 @@ pub struct WgpuLayer {
     pub width: u32,
     pub height: u32,
 
+    pub start_time: Instant,
+
     pub layer: LayerSurface,
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub surface: wgpu::Surface,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub elapsed_time_bind_group: wgpu::BindGroup,
+    pub elapsed_time_buffer: wgpu::Buffer,
 }
 
 impl CompositorHandler for WgpuLayer {

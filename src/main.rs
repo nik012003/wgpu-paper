@@ -14,6 +14,9 @@ use smithay_client_toolkit::{
     },
 };
 use wayland_client::{globals::registry_queue_init, Connection, Proxy, QueueHandle};
+use wgpu::util::DeviceExt;
+
+use std::time::Instant;
 
 use crate::wgpu_layer::*;
 mod wgpu_layer;
@@ -113,13 +116,46 @@ fn main() {
 
     dbg!(&adapter.get_info());
 
+    let elapsed_time_uniform = 0.0f32;
+
+    let elapsed_time_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Camera Buffer"),
+        contents: bytemuck::cast_slice(&[elapsed_time_uniform]),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+
+    let elapsed_time_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("camera_bind_group_layout"),
+        });
+
+    let elapsed_time_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &elapsed_time_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: elapsed_time_buffer.as_entire_binding(),
+        }],
+        label: Some("camera_bind_group"),
+    });
+
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("Shader"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
     });
+
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
-        bind_group_layouts: &[],
+        bind_group_layouts: &[&elapsed_time_group_layout],
         push_constant_ranges: &[],
     });
 
@@ -162,6 +198,9 @@ fn main() {
         adapter,
         queue,
         render_pipeline,
+        start_time: Instant::now(),
+        elapsed_time_bind_group,
+        elapsed_time_buffer,
     };
 
     // We don't draw immediately, the configure will notify us when to first draw.
@@ -214,7 +253,11 @@ impl WgpuLayer {
             });
 
             // NEW!
-            render_pass.set_pipeline(&self.render_pipeline); // 2.
+            let elapsed_time = self.start_time.elapsed().as_secs_f32();
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, &self.elapsed_time_bind_group, &[]);
+            // NEW!
             render_pass.draw(0..3, 0..1); // 3.
 
             //let _renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -238,6 +281,11 @@ impl WgpuLayer {
 
         // Submit the command in the queue to execute
         self.queue.submit(Some(encoder.finish()));
+        self.queue.write_buffer(
+            &self.elapsed_time_buffer,
+            0,
+            bytemuck::cast_slice(&[self.start_time.elapsed().as_secs_f32()]),
+        );
         surface_texture.present();
 
         self.layer
