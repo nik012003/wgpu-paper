@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 bytemuck = "1.13.1"
 clap = { version = "4.3.11", features = ["derive"] }
+strum = { version = "0.24", features = ["derive"] }
 pollster = "0.3.0"
 rand = "0.8.5"
 raw-window-handle = "0.5.2"

@@ -29,6 +29,7 @@ pub struct PaperConfig {
     pub output_name: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub anchor: Anchor,
     pub shader_path: PathBuf,
 }
 
@@ -44,6 +45,7 @@ pub struct Paper {
     pub exit: bool,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub anchor: Anchor,
 
     pub shader_path: PathBuf,
     pub output_name: Option<String>,
@@ -68,6 +70,7 @@ impl Paper {
             exit: false,
             width: config.width,
             height: config.height,
+            anchor: config.anchor,
             shader_path: config.shader_path,
             output_name: config.output_name,
             pointer: None,
@@ -136,7 +139,7 @@ impl OutputHandler for Paper {
         );
         // Configure the layer surface, providing things like the anchor on screen, desired size and the keyboard
         // interactivity
-        layer.set_anchor(Anchor::BOTTOM);
+        layer.set_anchor(self.anchor);
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
 
         // Get size of output
