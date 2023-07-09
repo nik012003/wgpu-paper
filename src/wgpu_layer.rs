@@ -1,18 +1,26 @@
+use std::time::Instant;
+
 use smithay_client_toolkit::{
     compositor::CompositorHandler,
-    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_seat,
-    delegate_xdg_shell,
+    delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
+    delegate_seat, delegate_xdg_shell,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
-    seat::{Capability, SeatHandler, SeatState},
-    shell::wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure},
+    seat::{
+        pointer::{PointerEvent, PointerEventKind, PointerHandler},
+        Capability, SeatHandler, SeatState,
+    },
+    shell::{
+        wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure},
+        WaylandSurface,
+    },
 };
-use std::time::Instant;
 use wayland_client::{
-    protocol::{wl_output, wl_seat, wl_surface},
+    protocol::{wl_output, wl_pointer, wl_seat, wl_surface},
     Connection, QueueHandle,
 };
+
 pub struct WgpuLayer {
     pub registry_state: RegistryState,
     pub seat_state: SeatState,
@@ -21,6 +29,8 @@ pub struct WgpuLayer {
     pub exit: bool,
     pub width: u32,
     pub height: u32,
+
+    pub pointer: Option<wl_pointer::WlPointer>,
 
     pub start_time: Instant,
 
@@ -96,10 +106,18 @@ impl SeatHandler for WgpuLayer {
     fn new_capability(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _seat: wl_seat::WlSeat,
-        _capability: Capability,
+        qh: &QueueHandle<Self>,
+        seat: wl_seat::WlSeat,
+        capability: Capability,
     ) {
+        if capability == Capability::Pointer && self.pointer.is_none() {
+            println!("Set pointer capability");
+            let pointer = self
+                .seat_state
+                .get_pointer(qh, &seat)
+                .expect("Failed to create pointer");
+            self.pointer = Some(pointer);
+        }
     }
 
     fn remove_capability(
@@ -114,12 +132,53 @@ impl SeatHandler for WgpuLayer {
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
 }
 
+impl PointerHandler for WgpuLayer {
+    fn pointer_frame(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _pointer: &wl_pointer::WlPointer,
+        events: &[PointerEvent],
+    ) {
+        use PointerEventKind::*;
+        for event in events {
+            // Ignore events for other surfaces
+            if &event.surface != self.layer.wl_surface() {
+                continue;
+            }
+            match event.kind {
+                Enter { .. } => {
+                    println!("Pointer entered @{:?}", event.position);
+                }
+                Leave { .. } => {
+                    println!("Pointer left");
+                }
+                Motion { .. } => {}
+                Press { button, .. } => {
+                    println!("Press {:x} @ {:?}", button, event.position);
+                    //self.shift = self.shift.xor(Some(0));
+                }
+                Release { button, .. } => {
+                    println!("Release {:x} @ {:?}", button, event.position);
+                }
+                Axis {
+                    horizontal,
+                    vertical,
+                    ..
+                } => {
+                    println!("Scroll H:{horizontal:?}, V:{vertical:?}");
+                }
+            }
+        }
+    }
+}
+
 delegate_compositor!(WgpuLayer);
 delegate_output!(WgpuLayer);
 
 delegate_seat!(WgpuLayer);
 delegate_layer!(WgpuLayer);
-
+delegate_pointer!(WgpuLayer);
 delegate_xdg_shell!(WgpuLayer);
 
 delegate_registry!(WgpuLayer);
@@ -161,16 +220,12 @@ impl LayerShellHandler for WgpuLayer {
             width: self.width,
             height: self.height,
             // Wayland is inherently a mailbox system.
+            // But we are using Fifo (traditional vsync), since all the gpus support that
             present_mode: wgpu::PresentMode::Fifo,
         };
 
         self.surface.configure(&self.device, &surface_config);
 
         self.draw(qh);
-        // Initiate the first draw.
-        //if self.first_configure {
-        //    self.first_configure = false;
-        //    self.draw(qh);
-        //}
     }
 }
