@@ -173,12 +173,9 @@ impl LayerShellHandler for Paper {
         configure: LayerSurfaceConfigure,
         _serial: u32,
     ) {
-        if configure.new_size.0 == 0 || configure.new_size.1 == 0 {
-            self.width = 256;
-            self.height = 256;
-        } else {
-            self.width = configure.new_size.0;
-            self.height = configure.new_size.1;
+        if configure.new_size.0 != 0 || configure.new_size.1 != 0 {
+            self.width = Some(configure.new_size.0);
+            self.height = Some(configure.new_size.1);
         }
         if let Some(wgpu_layer) = &self.wgpu_layer {
             let cap = wgpu_layer.surface.get_capabilities(&wgpu_layer.adapter);
@@ -187,8 +184,8 @@ impl LayerShellHandler for Paper {
                 format: cap.formats[0],
                 view_formats: vec![cap.formats[0]],
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                width: self.width,
-                height: self.height,
+                width: self.width.unwrap(),
+                height: self.height.unwrap(),
                 // Wayland is inherently a mailbox system.
                 // But we are using Fifo (traditional vsync), since all the gpus support that
                 present_mode: wgpu::PresentMode::Fifo,

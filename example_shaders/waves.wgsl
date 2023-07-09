@@ -57,7 +57,7 @@ const minorLineWidth : f32 = 0.0125;
 const majorLineFrequency : f32 = 5.0;
 const minorLineFrequency : f32 = 1.0;
 const scale : f32 = 5.0;
-const lineColor : vec4<f32> = vec4<f32>(0.25, 0.5, 1.0, 1.0);
+const lineColor : vec4<f32> = vec4<f32>(0.5, 0.1, 0.7, 1.0);
 const minLineWidth : f32 = 0.02;
 const maxLineWidth : f32 = 0.5;
 const lineSpeed : f32 = 0.5;
@@ -109,6 +109,7 @@ fn getPlasmaY(x : f32, horizontalFade : f32, offset : f32, iTime: f32) -> f32 {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var space : vec2<f32> = input.tex_coords * scale;
+    space.y -= 2.0;
     let iTime = time_buffer.elapsed_time;
     let horizontalFade : f32 = 1.0 - (cos(input.tex_coords.x * 6.28) * 0.5 + 0.5);
     let verticalFade : f32 = 1.0 - (cos(input.tex_coords.y * 6.28) * 0.5 + 0.5);

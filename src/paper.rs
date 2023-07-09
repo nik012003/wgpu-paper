@@ -15,12 +15,22 @@ use smithay_client_toolkit::{
 };
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
-    protocol::{wl_output, wl_pointer},
+    protocol::{
+        wl_output::{self},
+        wl_pointer,
+    },
     Connection, Proxy, QueueHandle,
 };
 use wgpu::util::DeviceExt;
 
 use std::{fs, path::PathBuf, time::Instant};
+
+pub struct PaperConfig {
+    pub output_name: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub shader_path: PathBuf,
+}
 
 use crate::wgpu_layer::*;
 pub struct Paper {
@@ -32,8 +42,8 @@ pub struct Paper {
     pub qh: QueueHandle<Self>,
 
     pub exit: bool,
-    pub width: u32,
-    pub height: u32,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 
     pub shader_path: PathBuf,
     pub output_name: Option<String>,
@@ -43,7 +53,7 @@ pub struct Paper {
 }
 
 impl Paper {
-    pub fn run(shader_path: PathBuf, output_name: Option<String>) {
+    pub fn run(config: PaperConfig) {
         let conn = Connection::connect_to_env().unwrap();
 
         let (globals, mut event_queue) = registry_queue_init(&conn).unwrap();
@@ -56,10 +66,10 @@ impl Paper {
             globals,
             qh,
             exit: false,
-            width: 256,
-            height: 256,
-            shader_path,
-            output_name,
+            width: config.width,
+            height: config.height,
+            shader_path: config.shader_path,
+            output_name: config.output_name,
             pointer: None,
             wgpu_layer: None,
         };
@@ -90,8 +100,20 @@ impl OutputHandler for Paper {
         &mut self,
         conn: &Connection,
         qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
+        output: wl_output::WlOutput,
     ) {
+        // Check if wgpu_layer was already created
+        if self.wgpu_layer.is_some() {
+            return;
+        }
+
+        if self.output_name.is_some() {
+            let info = self.output_state.info(&output);
+            if info.is_none() || info.unwrap().name != self.output_name {
+                return;
+            }
+        }
+
         // Load the shader
         let shader_data =
             fs::read_to_string(self.shader_path.clone()).expect("Unable to read file");
@@ -110,14 +132,29 @@ impl OutputHandler for Paper {
             surface.clone(),
             Layer::Background,
             Some("wpgu_layer"),
-            None,
+            Some(&output),
         );
         // Configure the layer surface, providing things like the anchor on screen, desired size and the keyboard
         // interactivity
-        layer.set_anchor(Anchor::RIGHT);
+        layer.set_anchor(Anchor::BOTTOM);
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
-        // TODO: get size of outputs
-        layer.set_size(1920, 1080);
+
+        // Get size of output
+        if self.width.is_none() || self.height.is_none() {
+            let (width, height) = self
+                .output_state
+                .info(&output)
+                .expect("Unable to retreive output information. -W and -H required")
+                .logical_size
+                .expect("Unable to retreive output logical_size . -W and -H required");
+            if self.width.is_none() {
+                self.width = Some(width.try_into().unwrap());
+            }
+            if self.height.is_none() {
+                self.height = Some(height.try_into().unwrap());
+            }
+        }
+        layer.set_size(self.width.unwrap(), self.height.unwrap());
 
         // In order for the layer surface to be mapped, we need to perform an initial commit with no attached\
         // buffer. For more info, see WaylandSurface::commit
@@ -306,12 +343,7 @@ impl Paper {
                         view: &texture_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color {
-                                r: 0.1,
-                                g: 0.2,
-                                b: 0.3,
-                                a: 1.0,
-                            }),
+                            load: wgpu::LoadOp::Clear(wgpu::Color::default()),
                             store: true,
                         },
                     }),
@@ -323,7 +355,7 @@ impl Paper {
 
             render_pass.set_bind_group(0, &wgpu_layer.elapsed_time_bind_group, &[]);
 
-            render_pass.draw(0..3, 0..1); // 3.
+            render_pass.draw(0..3, 0..1);
         }
 
         // Submit the command in the queue to execute
