@@ -30,6 +30,7 @@ pub struct PaperConfig {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub anchor: Anchor,
+    pub margin: Margin,
     pub shader_path: PathBuf,
 }
 
@@ -46,12 +47,20 @@ pub struct Paper {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub anchor: Anchor,
+    pub margin: Margin,
 
     pub shader_path: PathBuf,
     pub output_name: Option<String>,
 
     pub pointer: Option<wl_pointer::WlPointer>,
     pub wgpu_layer: Option<WgpuLayer>,
+}
+
+pub struct Margin {
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+    pub left: i32,
 }
 
 impl Paper {
@@ -71,6 +80,7 @@ impl Paper {
             width: config.width,
             height: config.height,
             anchor: config.anchor,
+            margin: config.margin,
             shader_path: config.shader_path,
             output_name: config.output_name,
             pointer: None,
@@ -140,6 +150,12 @@ impl OutputHandler for Paper {
         // Configure the layer surface, providing things like the anchor on screen, desired size and the keyboard
         // interactivity
         layer.set_anchor(self.anchor);
+        layer.set_margin(
+            self.margin.top,
+            self.margin.right,
+            self.margin.bottom,
+            self.margin.left,
+        );
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
 
         // Get size of output
