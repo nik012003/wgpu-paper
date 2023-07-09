@@ -5,7 +5,7 @@ use raw_window_handle::{
 };
 use smithay_client_toolkit::{
     compositor::CompositorState,
-    output::OutputState,
+    output::{OutputHandler, OutputState},
     registry::RegistryState,
     seat::SeatState,
     shell::{
@@ -13,41 +13,100 @@ use smithay_client_toolkit::{
         WaylandSurface,
     },
 };
-use wayland_client::{globals::registry_queue_init, Connection, Proxy, QueueHandle};
+use wayland_client::{
+    globals::{registry_queue_init, GlobalList},
+    protocol::{wl_output, wl_pointer},
+    Connection, Proxy, QueueHandle,
+};
 use wgpu::util::DeviceExt;
 
 use std::{fs, path::PathBuf, time::Instant};
 
 use crate::wgpu_layer::*;
-
 pub struct Paper {
-    pub shader: PathBuf,
+    pub registry_state: RegistryState,
+    pub seat_state: SeatState,
+    pub output_state: OutputState,
+
+    pub globals: GlobalList,
+    pub qh: QueueHandle<Self>,
+
+    pub exit: bool,
+    pub width: u32,
+    pub height: u32,
+
+    pub shader_path: PathBuf,
+    pub output_name: Option<String>,
+
+    pub pointer: Option<wl_pointer::WlPointer>,
+    pub wgpu_layer: Option<WgpuLayer>,
 }
 
 impl Paper {
-    pub fn run(&self) {
-        // Load the shader
-        let shader_data = fs::read_to_string(self.shader.clone()).expect("Unable to read file");
-
-        // All Wayland apps start by connecting the compositor (server).
+    pub fn run(shader_path: PathBuf, output_name: Option<String>) {
         let conn = Connection::connect_to_env().unwrap();
 
-        // Enumerate the list of globals to get the protocols the server implements.
         let (globals, mut event_queue) = registry_queue_init(&conn).unwrap();
-        let qh = event_queue.handle();
+        let qh: QueueHandle<Self> = event_queue.handle();
 
-        // The compositor (not to be confused with the server which is commonly called the compositor) allows
-        // configuring surfaces to be presented.
+        let mut paper = Self {
+            registry_state: RegistryState::new(&globals),
+            seat_state: SeatState::new(&globals, &qh),
+            output_state: OutputState::new(&globals, &qh),
+            globals,
+            qh,
+            exit: false,
+            width: 256,
+            height: 256,
+            shader_path,
+            output_name,
+            pointer: None,
+            wgpu_layer: None,
+        };
+
+        loop {
+            event_queue.blocking_dispatch(&mut paper).unwrap();
+
+            if paper.exit {
+                println!("exiting example");
+                break;
+            }
+        }
+
+        // On exit we must destroy the surface before the layer is destroyed.
+        if let Some(wgpu_layer) = paper.wgpu_layer {
+            drop(wgpu_layer.surface);
+            drop(wgpu_layer.layer);
+        }
+    }
+}
+
+impl OutputHandler for Paper {
+    fn output_state(&mut self) -> &mut OutputState {
+        &mut self.output_state
+    }
+
+    fn new_output(
+        &mut self,
+        conn: &Connection,
+        qh: &QueueHandle<Self>,
+        _output: wl_output::WlOutput,
+    ) {
+        // Load the shader
+        let shader_data =
+            fs::read_to_string(self.shader_path.clone()).expect("Unable to read file");
+
         let compositor =
-            CompositorState::bind(&globals, &qh).expect("wl_compositor is not available");
+            CompositorState::bind(&self.globals, &self.qh).expect("wl_compositor is not available");
         // This app uses the wlr layer shell, which may not be available with every compositor.
-        let layer_shell = LayerShell::bind(&globals, &qh).expect("layer shell is not available");
+        let layer_shell =
+            LayerShell::bind(&self.globals, qh).expect("layer shell is not available");
 
-        let surface = compositor.create_surface(&qh);
+        let surface = compositor.create_surface(qh);
         // Create the window for adapter selection
         //let window = xdg_shell_state.create_window(surface, WindowDecorations::ServerDefault, &qh);
         let layer = layer_shell.create_layer_surface(
-            &qh,
+            qh,
             surface.clone(),
             Layer::Background,
             Some("wpgu_layer"),
@@ -190,46 +249,43 @@ impl Paper {
             multiview: Default::default(),
         });
 
-        let mut wgpu = WgpuLayer {
-            registry_state: RegistryState::new(&globals),
-            seat_state: SeatState::new(&globals, &qh),
-            output_state: OutputState::new(&globals, &qh),
-
-            exit: false,
-            width: 256,
-            height: 256,
-            layer,
-            device,
-            surface,
-            adapter,
-            queue,
-            render_pipeline,
-
+        self.wgpu_layer = Some(WgpuLayer {
             start_time: Instant::now(),
+            layer,
+            adapter,
+            device,
+            queue,
+            surface,
+            render_pipeline,
             elapsed_time_bind_group,
             elapsed_time_buffer,
-            pointer: None,
-        };
+        })
+    }
 
-        // We don't draw immediately, the configure will notify us when to first draw.
-        loop {
-            event_queue.blocking_dispatch(&mut wgpu).unwrap();
+    fn update_output(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _output: wl_output::WlOutput,
+    ) {
+    }
 
-            if wgpu.exit {
-                println!("exiting example");
-                break;
-            }
-        }
-
-        // On exit we must destroy the surface before the layer is destroyed.
-        drop(wgpu.surface);
-        drop(wgpu.layer);
+    fn output_destroyed(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _output: wl_output::WlOutput,
+    ) {
     }
 }
 
-impl WgpuLayer {
+impl Paper {
     pub fn draw(&self, qh: &QueueHandle<Self>) {
-        let surface_texture = self
+        if self.wgpu_layer.is_none() {
+            return;
+        };
+        let wgpu_layer = self.wgpu_layer.as_ref().unwrap();
+        let surface_texture = wgpu_layer
             .surface
             .get_current_texture()
             .expect("failed to acquire next swapchain texture");
@@ -238,7 +294,9 @@ impl WgpuLayer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self.device.create_command_encoder(&Default::default());
+        let mut encoder = wgpu_layer
+            .device
+            .create_command_encoder(&Default::default());
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -261,26 +319,27 @@ impl WgpuLayer {
                 depth_stencil_attachment: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_pipeline(&wgpu_layer.render_pipeline);
 
-            render_pass.set_bind_group(0, &self.elapsed_time_bind_group, &[]);
+            render_pass.set_bind_group(0, &wgpu_layer.elapsed_time_bind_group, &[]);
 
             render_pass.draw(0..3, 0..1); // 3.
         }
 
         // Submit the command in the queue to execute
-        self.queue.write_buffer(
-            &self.elapsed_time_buffer,
+        wgpu_layer.queue.write_buffer(
+            &wgpu_layer.elapsed_time_buffer,
             0,
-            bytemuck::cast_slice(&[self.start_time.elapsed().as_secs_f32()]),
+            bytemuck::cast_slice(&[wgpu_layer.start_time.elapsed().as_secs_f32()]),
         );
 
-        self.queue.submit(Some(encoder.finish()));
+        wgpu_layer.queue.submit(Some(encoder.finish()));
         surface_texture.present();
 
         // Request new frame
-        self.layer
+        wgpu_layer
+            .layer
             .wl_surface()
-            .frame(qh, self.layer.wl_surface().clone());
+            .frame(qh, wgpu_layer.layer.wl_surface().clone());
     }
 }

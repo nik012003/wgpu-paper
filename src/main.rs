@@ -9,6 +9,9 @@ mod wgpu_layer;
 #[derive(Parser)]
 #[command(about, version)]
 struct Cli {
+    // Name of the output (eg. HDMI-1, eDP-1)
+    #[arg(short)]
+    output_name: Option<String>,
     // Path to wgsl shader
     #[arg(value_name = "SHADER")]
     shader_path: PathBuf,
@@ -16,8 +19,5 @@ struct Cli {
 
 fn main() {
     let args = Cli::parse();
-    let paper = Paper {
-        shader: args.shader_path,
-    };
-    paper.run();
+    Paper::run(args.shader_path, args.output_name);
 }
