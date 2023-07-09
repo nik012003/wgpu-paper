@@ -26,7 +26,7 @@ struct Cli {
     #[arg(short = 'R', default_value_t = 0)]
     margin_right: i32,
     /// Margin from the top
-    #[arg(short = 'S', default_value_t = 0)]
+    #[arg(short = 'B', default_value_t = 0)]
     margin_bottom: i32,
     /// Margin from the top
     #[arg(short = 'L', default_value_t = 0)]
@@ -34,6 +34,9 @@ struct Cli {
     /// Comma sperated list of corners to anchor to
     #[arg(short = 'A', value_delimiter = ',', default_values_t = [ArgAnchor::Bottom])]
     anchor: Vec<ArgAnchor>,
+    /// Number of pointer positions given to shader
+    #[arg(short, default_value_t = 10)]
+    pointer_trail_frames: usize,
     /// Path to wgsl shader
     #[arg(value_name = "SHADER")]
     shader_path: PathBuf,
@@ -87,6 +90,7 @@ fn main() {
             bottom: args.margin_bottom,
             left: args.margin_left,
         },
+        pointer_trail_frames: args.pointer_trail_frames,
         shader_path: args.shader_path,
     });
 }

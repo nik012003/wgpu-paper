@@ -21,6 +21,7 @@ use wayland_client::{
     protocol::{wl_pointer, wl_seat, wl_surface},
     Connection, QueueHandle,
 };
+use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout, Buffer, Device};
 
 pub struct WgpuLayer {
     pub start_time: Instant,
@@ -34,6 +35,8 @@ pub struct WgpuLayer {
 
     pub elapsed_time_bind_group: wgpu::BindGroup,
     pub elapsed_time_buffer: wgpu::Buffer,
+    pub pointer_bind_group: wgpu::BindGroup,
+    pub pointer_buffer: wgpu::Buffer,
 }
 
 // Boilerplate Papaer implements
@@ -123,31 +126,21 @@ impl PointerHandler for Paper {
             // Ignore events for other surfaces
             if self.wgpu_layer.is_none()
                 || (&event.surface != self.wgpu_layer.as_ref().unwrap().layer.wl_surface())
+                || self.width.is_none()
+                || self.height.is_none()
             {
                 continue;
             }
             match event.kind {
-                Enter { .. } => {
-                    println!("Pointer entered @{:?}", event.position);
+                Enter { .. } | Motion { .. } => {
+                    let x_norm = event.position.0 as f32 / (self.width.unwrap() as f32);
+                    let y_norm = event.position.1 as f32 / (self.height.unwrap() as f32);
+                    self.current_pointer_pos = Some([x_norm, y_norm]);
                 }
                 Leave { .. } => {
-                    println!("Pointer left");
+                    self.current_pointer_pos = None;
                 }
-                Motion { .. } => {}
-                Press { button, .. } => {
-                    println!("Press {:x} @ {:?}", button, event.position);
-                    //self.shift = self.shift.xor(Some(0));
-                }
-                Release { button, .. } => {
-                    println!("Release {:x} @ {:?}", button, event.position);
-                }
-                Axis {
-                    horizontal,
-                    vertical,
-                    ..
-                } => {
-                    println!("Scroll H:{horizontal:?}, V:{vertical:?}");
-                }
+                _ => {}
             }
         }
     }
@@ -198,4 +191,44 @@ impl LayerShellHandler for Paper {
             self.draw(qh);
         }
     }
+}
+
+pub fn create_gpu_buffer(
+    device: &Device,
+    label: &str,
+    binding: u32,
+    contents: &[u8],
+    has_dynamic_offset: bool,
+) -> (Buffer, BindGroupLayout, BindGroup) {
+    let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(&format!("{}_buffer", label)),
+        contents,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+
+    // Create a bind group layout visible to the fragment shader
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            count: None,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset,
+                min_binding_size: None,
+            },
+        }],
+        label: Some(&format!("{}_group_layout", label)),
+    });
+
+    // Create the bind group
+    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding,
+            resource: buffer.as_entire_binding(),
+        }],
+        label: Some(&format!("{}_bind_group", label)),
+    });
+    (buffer, layout, group)
 }

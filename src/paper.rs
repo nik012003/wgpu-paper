@@ -21,7 +21,6 @@ use wayland_client::{
     },
     Connection, Proxy, QueueHandle,
 };
-use wgpu::util::DeviceExt;
 
 use std::{fs, path::PathBuf, time::Instant};
 
@@ -31,6 +30,7 @@ pub struct PaperConfig {
     pub height: Option<u32>,
     pub anchor: Anchor,
     pub margin: Margin,
+    pub pointer_trail_frames: usize,
     pub shader_path: PathBuf,
 }
 
@@ -53,6 +53,8 @@ pub struct Paper {
     pub output_name: Option<String>,
 
     pub pointer: Option<wl_pointer::WlPointer>,
+    pub pointer_positions: Vec<[f32; 2]>,
+    pub current_pointer_pos: Option<[f32; 2]>,
     pub wgpu_layer: Option<WgpuLayer>,
 }
 
@@ -84,6 +86,13 @@ impl Paper {
             shader_path: config.shader_path,
             output_name: config.output_name,
             pointer: None,
+            /*
+            Right now, we are using (-100, -100) to indicate that the pointer isn't getting captured
+            This approach *sucks*, but I don't know how to make it better
+            I really don't wanna send another buffer to the gpu just for that
+            */
+            pointer_positions: vec![[-100.0f32, -100.0f32]; config.pointer_trail_frames],
+            current_pointer_pos: None,
             wgpu_layer: None,
         };
 
@@ -235,39 +244,26 @@ impl OutputHandler for Paper {
         ))
         .expect("Failed to request device");
 
-        dbg!(&adapter.get_info());
+        //dbg!(&adapter.get_info());
 
-        let elapsed_time_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[0.0f32]), // Start from 0
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        // Create a bind group layout visible to the fragment shader
-        let elapsed_time_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("elapsed_time_group_layout"),
-            });
-
-        // Create the bind group
-        let elapsed_time_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &elapsed_time_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: elapsed_time_buffer.as_entire_binding(),
-            }],
-            label: Some("elapsed_time_bind_group"),
-        });
+        /* -- Elpsed time buffer, binding: 0 -- */
+        let (elapsed_time_buffer, elapsed_time_group_layout, elapsed_time_bind_group) =
+            create_gpu_buffer(
+                &device,
+                "elapsed_time",
+                0,
+                bytemuck::cast_slice(&[0.0f32]),
+                false,
+            );
+        /* -- Pointer pos buffer, binding: 0 -- */
+        //let pointer_positions = vec![[0.0f32, 0.0f32]; 10];
+        let (pointer_buffer, pointer_group_layout, pointer_bind_group) = create_gpu_buffer(
+            &device,
+            "pointer",
+            1,
+            bytemuck::cast_slice(self.pointer_positions.as_slice()),
+            false,
+        );
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -277,7 +273,7 @@ impl OutputHandler for Paper {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&elapsed_time_group_layout],
+                bind_group_layouts: &[&elapsed_time_group_layout, &pointer_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -315,6 +311,8 @@ impl OutputHandler for Paper {
             render_pipeline,
             elapsed_time_bind_group,
             elapsed_time_buffer,
+            pointer_bind_group,
+            pointer_buffer,
         })
     }
 
@@ -336,7 +334,7 @@ impl OutputHandler for Paper {
 }
 
 impl Paper {
-    pub fn draw(&self, qh: &QueueHandle<Self>) {
+    pub fn draw(&mut self, qh: &QueueHandle<Self>) {
         if self.wgpu_layer.is_none() {
             return;
         };
@@ -373,6 +371,7 @@ impl Paper {
             render_pass.set_pipeline(&wgpu_layer.render_pipeline);
 
             render_pass.set_bind_group(0, &wgpu_layer.elapsed_time_bind_group, &[]);
+            render_pass.set_bind_group(1, &wgpu_layer.pointer_bind_group, &[]);
 
             render_pass.draw(0..3, 0..1);
         }
@@ -382,6 +381,16 @@ impl Paper {
             &wgpu_layer.elapsed_time_buffer,
             0,
             bytemuck::cast_slice(&[wgpu_layer.start_time.elapsed().as_secs_f32()]),
+        );
+        self.pointer_positions.pop();
+        // Again, really bad
+        let pos = self.current_pointer_pos.unwrap_or([-100.0f32, -100.0f32]);
+        self.pointer_positions.insert(0, pos);
+
+        wgpu_layer.queue.write_buffer(
+            &wgpu_layer.pointer_buffer,
+            0,
+            bytemuck::cast_slice(self.pointer_positions.as_slice()),
         );
 
         wgpu_layer.queue.submit(Some(encoder.finish()));

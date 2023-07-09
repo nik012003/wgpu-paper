@@ -10,6 +10,10 @@ struct TimeBuffer {
     elapsed_time: f32,
 };
 
+@group(1) @binding(1)
+var<uniform> pointer_buffer: vec2<f32>;
+
+
 // "Heavily inspired" by : https://github.com/gfx-rs/wgpu/blob/trunk/examples/mipmap/src/blit.wgsl
 // meant to be called with 3 vertex indices: 0, 1, 2
 // draws one large triangle over the clip space like this:
@@ -135,6 +139,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
         line = line + circle;
         lines = lines + line * lineColor * rand;
+    }
+
+    if (abs(input.tex_coords.x - pointer_buffer.x) < 0.05 && abs(input.tex_coords.y - pointer_buffer.y) < 0.05 ) {
+        lines += vec4(0.5, 0.2,0.6, 1.0);
     }
 
     return lines;
