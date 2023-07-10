@@ -53,7 +53,7 @@ pub struct Paper {
     pub output_name: Option<String>,
 
     pub pointer: Option<wl_pointer::WlPointer>,
-    pub pointer_positions: Vec<[f32; 2]>,
+    pub pointer_positions: Vec<[f32; 4]>,
     pub current_pointer_pos: Option<[f32; 2]>,
     pub wgpu_layer: Option<WgpuLayer>,
 }
@@ -90,8 +90,9 @@ impl Paper {
             Right now, we are using (-100, -100) to indicate that the pointer isn't getting captured
             This approach *sucks*, but I don't know how to make it better
             I really don't wanna send another buffer to the gpu just for that
+            The last two elements are there to pad out the elements so that they fit in a vec4
             */
-            pointer_positions: vec![[-100.0f32, -100.0f32]; config.pointer_trail_frames],
+            pointer_positions: vec![[-100.0, -100.0, 0.0, 0.0]; config.pointer_trail_frames],
             current_pointer_pos: None,
             wgpu_layer: None,
         };
@@ -203,7 +204,7 @@ impl OutputHandler for Paper {
             let mut handle = WaylandWindowHandle::empty();
             handle.surface = surface.id().as_ptr() as *mut _;
             // TODO : implement support for regualar wayland windows, instead of just layer shell
-            //handle.surface = window.wl_surface().id().as_ptr() as *mut _;
+            // handle.surface = window.wl_surface().id().as_ptr() as *mut _;
             let window_handle = RawWindowHandle::Wayland(handle);
 
             struct RawWindowHandleHasRawWindowHandle(RawDisplayHandle, RawWindowHandle);
@@ -256,7 +257,6 @@ impl OutputHandler for Paper {
                 false,
             );
         /* -- Pointer pos buffer, binding: 0 -- */
-        //let pointer_positions = vec![[0.0f32, 0.0f32]; 10];
         let (pointer_buffer, pointer_group_layout, pointer_bind_group) = create_gpu_buffer(
             &device,
             "pointer",
@@ -385,7 +385,7 @@ impl Paper {
         self.pointer_positions.pop();
         // Again, really bad
         let pos = self.current_pointer_pos.unwrap_or([-100.0f32, -100.0f32]);
-        self.pointer_positions.insert(0, pos);
+        self.pointer_positions.insert(0, [pos[0], pos[1], 0.0, 0.0]);
 
         wgpu_layer.queue.write_buffer(
             &wgpu_layer.pointer_buffer,

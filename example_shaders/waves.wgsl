@@ -10,8 +10,9 @@ struct TimeBuffer {
     elapsed_time: f32,
 };
 
+// Only x and y are filled with data, the other elements of the vec4 are for padding restrictions
 @group(1) @binding(1)
-var<uniform> pointer_buffer: vec2<f32>;
+var<uniform> pointer_buffer: array<vec4<f32>,10>;
 
 
 // "Heavily inspired" by : https://github.com/gfx-rs/wgpu/blob/trunk/examples/mipmap/src/blit.wgsl
@@ -141,9 +142,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         lines = lines + line * lineColor * rand;
     }
 
-    if (abs(input.tex_coords.x - pointer_buffer.x) < 0.05 && abs(input.tex_coords.y - pointer_buffer.y) < 0.05 ) {
-        lines += vec4(0.5, 0.2,0.6, 1.0);
+    for (var i: i32 = 0; i <= 10; i++){
+        let pb = vec2(pointer_buffer[i].x, pointer_buffer[i].y );
+        let s = smoothstep(0.02/(f32(i)), 0.01, distance(input.tex_coords,pb));
+        lines += (lineColor * vec4(0.0,0.0,0.0,-1.0));
     }
-
+    
     return lines;
 }
