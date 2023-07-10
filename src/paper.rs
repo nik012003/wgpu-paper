@@ -348,14 +348,6 @@ impl Paper {
         if self.wgpu_layer.is_none() {
             return;
         };
-
-        if let Some(fps) = self.fps {
-            let time = Duration::from_secs_f64(1.0 / fps as f64)
-                .checked_sub(Instant::now() - self.last_frame);
-            if let Some(wait) = time {
-                sleep(wait);
-            }
-        }
         let wgpu_layer = self.wgpu_layer.as_ref().unwrap();
         let surface_texture = wgpu_layer
             .surface
@@ -412,7 +404,18 @@ impl Paper {
         );
 
         wgpu_layer.queue.submit(Some(encoder.finish()));
+
         surface_texture.present();
+
+        if let Some(fps) = self.fps {
+            let time = Duration::from_secs_f64(1.0 / fps as f64)
+                .checked_sub(Instant::now() - self.last_frame);
+            if let Some(wait) = time {
+                sleep(wait);
+            }
+        }
+        // println!("Frametime: {:?}", Instant::now() - self.last_frame);
+
         self.last_frame = Instant::now();
         // Request new frame
         wgpu_layer
