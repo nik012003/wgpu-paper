@@ -142,11 +142,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         lines = lines + line * lineColor * rand;
     }
 
+    var touches = vec4(0.0);
     for (var i: i32 = 0; i <= 10; i++){
         let pb = vec2(pointer_buffer[i].x, pointer_buffer[i].y );
-        let s = smoothstep(0.02/(f32(i)), 0.01, distance(input.tex_coords,pb));
-        lines += (lineColor * vec4(0.0,0.0,0.0,-1.0));
+        let s = smoothstep(0.02/(f32(i)), 0.00, distance(input.tex_coords,pb));
+        touches += (lineColor * s);
     }
-    
+    lines += touches;
     return lines;
 }
