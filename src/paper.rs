@@ -22,7 +22,12 @@ use wayland_client::{
     Connection, Proxy, QueueHandle,
 };
 
-use std::{fs, path::PathBuf, time::Instant};
+use std::{
+    fs,
+    path::PathBuf,
+    thread::sleep,
+    time::{Duration, Instant},
+};
 
 pub struct PaperConfig {
     pub output_name: Option<String>,
@@ -31,6 +36,7 @@ pub struct PaperConfig {
     pub anchor: Anchor,
     pub margin: Margin,
     pub pointer_trail_frames: usize,
+    pub fps: Option<u64>,
     pub shader_path: PathBuf,
 }
 
@@ -51,6 +57,8 @@ pub struct Paper {
 
     pub shader_path: PathBuf,
     pub output_name: Option<String>,
+    pub fps: Option<u64>,
+    pub last_frame: Instant,
 
     pub pointer: Option<wl_pointer::WlPointer>,
     pub pointer_positions: Vec<[f32; 4]>,
@@ -85,6 +93,8 @@ impl Paper {
             margin: config.margin,
             shader_path: config.shader_path,
             output_name: config.output_name,
+            fps: config.fps,
+            last_frame: Instant::now(),
             pointer: None,
             /*
             Right now, we are using (-100, -100) to indicate that the pointer isn't getting captured
@@ -338,6 +348,14 @@ impl Paper {
         if self.wgpu_layer.is_none() {
             return;
         };
+
+        if let Some(fps) = self.fps {
+            let time = Duration::from_secs_f64(1.0 / fps as f64)
+                .checked_sub(Instant::now() - self.last_frame);
+            if let Some(wait) = time {
+                sleep(wait);
+            }
+        }
         let wgpu_layer = self.wgpu_layer.as_ref().unwrap();
         let surface_texture = wgpu_layer
             .surface
@@ -395,7 +413,7 @@ impl Paper {
 
         wgpu_layer.queue.submit(Some(encoder.finish()));
         surface_texture.present();
-
+        self.last_frame = Instant::now();
         // Request new frame
         wgpu_layer
             .layer
