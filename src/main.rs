@@ -40,9 +40,12 @@ struct Cli {
     /// Comma sperated list of corners to anchor to
     #[arg(long, short = 'A', value_delimiter = ',', default_values_t = [ArgAnchor::Bottom])]
     anchor: Vec<ArgAnchor>,
-    /// Audio input device name
+    /// Enable audio input
+    #[arg(long, default_value_t = true)]
+    audio_input: bool,
+    /// Audio device name
     #[arg(long)]
-    audio_input: Option<String>,
+    audio_device: Option<String>,
     /// Audio device channels
     #[arg(long, default_value_t = 2)]
     audio_channels: usize,
@@ -99,17 +102,20 @@ fn main() {
     for ele in args.anchor {
         anchor |= ele.into();
     }
-
-    let ai = Arc::new(Mutex::new(AudioInput::new(
-        args.audio_input,
-        args.audio_channels,
-        args.sample_rate,
-        args.buffer_size,
-    )));
-    let cloned_ai = ai.clone();
-    thread::spawn(|| {
-        AudioInput::start_capture_loop(cloned_ai);
-    });
+    let mut audio_input: Option<Arc<Mutex<AudioInput>>> = None;
+    if args.audio_input {
+        let ai: Arc<Mutex<AudioInput>> = Arc::new(Mutex::new(AudioInput::new(
+            args.audio_device,
+            args.audio_channels,
+            args.sample_rate,
+            args.buffer_size,
+        )));
+        let cloned_ai = ai.clone();
+        thread::spawn(|| {
+            AudioInput::start_capture_loop(cloned_ai);
+        });
+        audio_input = Some(ai);
+    }
 
     Paper::run(PaperConfig {
         output_name: args.output_name,
@@ -122,7 +128,7 @@ fn main() {
             bottom: args.margin_bottom,
             left: args.margin_left,
         },
-        audio_input: ai,
+        audio_input,
         pointer_trail_frames: args.pointer_trail_frames,
         fps: args.fps,
         shader_path: args.shader_path,

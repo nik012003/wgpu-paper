@@ -36,7 +36,7 @@ pub struct PaperConfig {
     pub height: Option<u32>,
     pub anchor: Anchor,
     pub margin: Margin,
-    pub audio_input: Arc<Mutex<AudioInput>>,
+    pub audio_input: Option<Arc<Mutex<AudioInput>>>,
     pub pointer_trail_frames: usize,
     pub fps: Option<u64>,
     pub shader_path: PathBuf,
@@ -62,7 +62,7 @@ pub struct Paper {
     pub fps: Option<u64>,
     pub last_frame: Instant,
 
-    pub audio_input: Arc<Mutex<AudioInput>>,
+    pub audio_input: Option<Arc<Mutex<AudioInput>>>,
 
     pub pointer: Option<wl_pointer::WlPointer>,
     pub pointer_positions: Vec<[f32; 4]>,
