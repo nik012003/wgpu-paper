@@ -1,9 +1,15 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    thread,
+};
 
+use audio::AudioInput;
 use clap::{Parser, ValueEnum};
 use paper::{Margin, Paper, PaperConfig};
 use smithay_client_toolkit::shell::wlr_layer::Anchor;
 use strum::Display;
+mod audio;
 mod paper;
 mod wgpu_layer;
 
@@ -82,6 +88,12 @@ fn main() {
         anchor |= ele.into();
     }
 
+    let ai = Arc::new(Mutex::new(AudioInput::new()));
+    let cloned_ai = ai.clone();
+    thread::spawn(|| {
+        AudioInput::start_capture_loop(cloned_ai);
+    });
+
     Paper::run(PaperConfig {
         output_name: args.output_name,
         width: args.width,
@@ -93,6 +105,7 @@ fn main() {
             bottom: args.margin_bottom,
             left: args.margin_left,
         },
+        audio_input: ai,
         pointer_trail_frames: args.pointer_trail_frames,
         fps: args.fps,
         shader_path: args.shader_path,

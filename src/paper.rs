@@ -25,6 +25,7 @@ use wayland_client::{
 use std::{
     fs,
     path::PathBuf,
+    sync::{Arc, Mutex},
     thread::sleep,
     time::{Duration, Instant},
 };
@@ -35,12 +36,13 @@ pub struct PaperConfig {
     pub height: Option<u32>,
     pub anchor: Anchor,
     pub margin: Margin,
+    pub audio_input: Arc<Mutex<AudioInput>>,
     pub pointer_trail_frames: usize,
     pub fps: Option<u64>,
     pub shader_path: PathBuf,
 }
 
-use crate::wgpu_layer::*;
+use crate::{audio::AudioInput, wgpu_layer::*};
 pub struct Paper {
     pub registry_state: RegistryState,
     pub seat_state: SeatState,
@@ -59,6 +61,8 @@ pub struct Paper {
     pub output_name: Option<String>,
     pub fps: Option<u64>,
     pub last_frame: Instant,
+
+    pub audio_input: Arc<Mutex<AudioInput>>,
 
     pub pointer: Option<wl_pointer::WlPointer>,
     pub pointer_positions: Vec<[f32; 4]>,
@@ -105,6 +109,7 @@ impl Paper {
             pointer_positions: vec![[-100.0, -100.0, 0.0, 0.0]; config.pointer_trail_frames],
             current_pointer_pos: None,
             wgpu_layer: None,
+            audio_input: config.audio_input,
         };
 
         loop {
