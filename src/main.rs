@@ -40,6 +40,18 @@ struct Cli {
     /// Comma sperated list of corners to anchor to
     #[arg(long, short = 'A', value_delimiter = ',', default_values_t = [ArgAnchor::Bottom])]
     anchor: Vec<ArgAnchor>,
+    /// Audio input device name
+    #[arg(long)]
+    audio_input: Option<String>,
+    /// Audio device channels
+    #[arg(long, default_value_t = 2)]
+    audio_channels: usize,
+    /// Audio device sample rate
+    #[arg(long, default_value_t = 44100)]
+    sample_rate: u32,
+    /// Audio device buffer size
+    #[arg(long, default_value_t = 4096)]
+    buffer_size: u32,
     /// Number of pointer positions given to shader
     #[arg(long, short, default_value_t = 10)]
     pointer_trail_frames: usize,
@@ -88,7 +100,12 @@ fn main() {
         anchor |= ele.into();
     }
 
-    let ai = Arc::new(Mutex::new(AudioInput::new()));
+    let ai = Arc::new(Mutex::new(AudioInput::new(
+        args.audio_input,
+        args.audio_channels,
+        args.sample_rate,
+        args.buffer_size,
+    )));
     let cloned_ai = ai.clone();
     thread::spawn(|| {
         AudioInput::start_capture_loop(cloned_ai);
