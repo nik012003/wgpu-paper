@@ -34,7 +34,8 @@ impl AudioInput {
 
     pub fn start_capture_loop(audio_in: Arc<Mutex<AudioInput>>) {
         let host = cpal::default_host();
-        let device = match audio_in.lock().unwrap().device_name.clone() {
+        let ai = audio_in.lock().unwrap();
+        let device = match ai.device_name.clone() {
             Some(name) => host
                 .input_devices()
                 .expect("Coudn't get input devices")
@@ -44,16 +45,18 @@ impl AudioInput {
         }
         .expect("No input device found");
 
-        let n_channels: usize = audio_in.lock().unwrap().channels;
+        let n_channels: usize = ai.channels;
 
         let config = StreamConfig {
             channels: n_channels as u16,
-            sample_rate: cpal::SampleRate(audio_in.lock().unwrap().sample_rate),
-            buffer_size: cpal::BufferSize::Fixed(audio_in.lock().unwrap().buffer_size),
+            sample_rate: cpal::SampleRate(ai.sample_rate),
+            buffer_size: cpal::BufferSize::Fixed(ai.buffer_size),
         };
+        drop(ai);
         let err_fn = move |err| {
             eprintln!("an error occurred on stream: {}", err);
         };
+
         let mut planner = FftPlanner::<f32>::new();
         let stream = device
             .build_input_stream(
@@ -69,7 +72,7 @@ impl AudioInput {
                     ai.used = false;
                     // [ [lr] [lr] [lr] ... ]
                     let channels_buff: Vec<&[f32]> = data.chunks(n_channels).collect();
-
+                    dbg!(channels_buff.len());
                     let fft = planner.plan_fft_forward(channels_buff.len());
                     ai.audio_buffers = vec![vec![]; n_channels];
                     for sample in channels_buff.iter() {

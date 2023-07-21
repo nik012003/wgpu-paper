@@ -271,7 +271,7 @@ impl OutputHandler for Paper {
                 bytemuck::cast_slice(&[0.0f32]),
                 false,
             );
-        /* -- Pointer pos buffer, binding: 0 -- */
+        /* -- Pointer pos buffer, binding: 1 -- */
         let (pointer_buffer, pointer_group_layout, pointer_bind_group) = create_gpu_buffer(
             &device,
             "pointer",
